@@ -26,15 +26,38 @@ VectorFloat gravity; // [x, y, z]            gravity vector
 float euler[3];      // [psi, theta, phi]    Euler angle container
 float ypr[3];        // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
+volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
+
 #define TCAADDR 0x70
 #define INTERRUPT_PIN 1
+VL6180X sensor;
 
 void processMPU();
 void processEccentricEncoder();
 void processSuspensionEncoder();
 void processDistanceSensor();
+void tcaselect(uint8_t i);
 
-volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
+bool rangeDataReady()
+{
+  tcaselect(0);
+  return ((sensor.readReg(VL6180X::RESULT__INTERRUPT_STATUS_GPIO) & 0x04) != 0);
+}
+
+uint8_t readRangeNonBlocking()
+{
+  tcaselect(0);
+  uint8_t range = sensor.readReg(VL6180X::RESULT__RANGE_VAL);
+  sensor.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01);
+
+  return range;
+}
+
+uint8_t readRangeNonBlockingMillimeters()
+{
+  tcaselect(0);
+  return readRangeNonBlocking() * sensor.getScaling();
+}
 
 // ISR for MPU
 void dmpDataReady()
@@ -54,11 +77,9 @@ void tcaselect(uint8_t i)
   Wire.endTransmission();
 }
 
-VL6180X sensor;
-
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(500000);
   Wire.begin();
   Wire.setClock(400000);
 
@@ -68,6 +89,7 @@ void setup()
   sensor.configureDefault();
 
   sensor.writeReg(VL6180X::SYSRANGE__MAX_CONVERGENCE_TIME, 16);
+  sensor.writeReg16Bit(VL6180X::SYSALS__INTEGRATION_PERIOD, 25);
 
   sensor.setTimeout(500);
 
@@ -76,6 +98,12 @@ void setup()
   // in case stopContinuous() triggered a single-shot
   // measurement, wait for it to complete
   delay(300);
+
+  // enable interrupt output on GPIO1
+  sensor.writeReg(VL6180X::SYSTEM__MODE_GPIO1, 0x10);
+  // clear any existing interrupts
+  sensor.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x03);
+
   // start interleaved continuous mode with period of 100 ms
   sensor.startRangeContinuous(30);
 
@@ -135,7 +163,7 @@ void setup()
     dmpReady = true;
 
     mpu.setDLPFMode(MPU6050_DLPF_BW_188);
-    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);  //divide by 16384 to get G's
+    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2); // divide by 16384 to get G's
 
     // get expected DMP packet size for later comparison
     packetSize = mpu.dmpGetFIFOPacketSize();
@@ -178,16 +206,14 @@ void processSuspensionEncoder()
 void processDistanceSensor()
 {
   // VL6180
-  tcaselect(0);
-  float_t currentDistance = sensor.readRangeContinuousMillimeters();
-  currentDistance = EMA_function(0.8, currentDistance, previousDistance);
-  Serial.print(currentDistance);
+  if (rangeDataReady())
+  {
+    Serial.println(readRangeNonBlockingMillimeters());
+  }
   if (sensor.timeoutOccurred())
   {
     Serial.println("Timeout");
   }
-  previousDistance = currentDistance;
-
   Serial.print(",");
 }
 
@@ -256,7 +282,8 @@ void processMPU()
     // Serial.print("\t");
     // Serial.print(aaWorld.y);
     // Serial.print("\t");
-    Serial.print(aaWorld.z);
+    int32_t acceleration = (aaWorld.z * 1000) / 167183; // m/s2 X10
+    Serial.print(acceleration);
   }
 }
 

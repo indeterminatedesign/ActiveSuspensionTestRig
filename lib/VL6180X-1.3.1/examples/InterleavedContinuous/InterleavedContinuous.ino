@@ -29,6 +29,24 @@ The range readings are in units of mm. */
 
 VL6180X sensor;
 
+bool rangeDataReady()
+{
+  return ((sensor.readReg(VL6180X::RESULT__INTERRUPT_STATUS_GPIO) & 0x04) != 0);
+}
+
+uint8_t readRangeNonBlocking()
+{
+  uint8_t range = sensor.readReg(VL6180X::RESULT__RANGE_VAL);
+  sensor.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x01);
+
+  return range;
+}
+
+uint8_t readRangeNonBlockingMillimeters()
+{
+  return readRangeNonBlocking() * sensor.getScaling();
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -50,9 +68,23 @@ void setup()
   sensor.stopContinuous();
   // in case stopContinuous() triggered a single-shot
   // measurement, wait for it to complete
+
+  sensor.setTimeout(500);
+
+   // stop continuous mode if already active
+  sensor.stopContinuous();
+  // in case stopContinuous() triggered a single-shot
+  // measurement, wait for it to complete
+  delay(300);
+
+  // enable interrupt output on GPIO1
+  sensor.writeReg(VL6180X::SYSTEM__MODE_GPIO1, 0x10);
+  // clear any existing interrupts
+  sensor.writeReg(VL6180X::SYSTEM__INTERRUPT_CLEAR, 0x03);
+
   delay(300);
   // start interleaved continuous mode with period of 100 ms
-  sensor.startInterleavedContinuous(100);
+  sensor.startRangeContinuous(100);
 
 }
 

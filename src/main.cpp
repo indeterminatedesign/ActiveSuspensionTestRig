@@ -3,33 +3,19 @@
 #include <Wire.h>
 #include <AS5600.h>
 #include <I2Cdev.h>
-#include <MPU6050_6Axis_MotionApps20.h>
+#include <MPU6050.h>
+#include <Servo.h>
 
 AS5600 encoder;
+Servo servo;
 
 MPU6050 mpu;
-
-// MPU control/status vars
-bool dmpReady = false;  // set true if DMP init was successful
-uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
-uint16_t fifoCount;     // count of all bytes currently in FIFO
-uint8_t fifoBuffer[64]; // FIFO storage buffer
-
-// orientation/motion vars
-Quaternion q;        // [w, x, y, z]         quaternion container
-VectorInt16 aa;      // [x, y, z]            accel sensor measurements
-VectorInt16 aaReal;  // [x, y, z]            gravity-free accel sensor measurements
-VectorInt16 aaWorld; // [x, y, z]            world-frame accel sensor measurements
-VectorFloat gravity; // [x, y, z]            gravity vector
-float euler[3];      // [psi, theta, phi]    Euler angle container
-float ypr[3];        // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
 float_t acceleration;
 
 volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
 
+#define MOTOR_PIN A1
 #define INTERRUPT_PIN 2
 #define TCAADDR 0x70
 
@@ -43,6 +29,9 @@ void processEccentricEncoder();
 void processSuspensionEncoder();
 void processDistanceSensor();
 void tcaselect(uint8_t i);
+float_t calculateDistance(uint16_t angle);
+void moveSuspensionDistance(float_t distance);
+void followRoller ();
 
 // ISR for VL6180X
 void interrupt()
@@ -51,12 +40,6 @@ void interrupt()
   {
     flag = 1;
   }
-}
-
-// ISR for MPU
-void dmpDataReady()
-{
-  mpuInterrupt = true;
 }
 
 float EMA_function(float alpha, float latest, float stored);
@@ -76,6 +59,11 @@ void setup()
   Serial.begin(500000);
   Wire.begin();
   Wire.setClock(400000);
+  //******************************************
+  // Servo
+  //******************************************
+  servo.attach(0);
+  servo.writeMicroseconds(1500);
 
   //******************************************
   // MPU
@@ -84,70 +72,22 @@ void setup()
   // initialize device
   Serial.println(F("Initializing I2C devices..."));
   mpu.initialize();
-  pinMode(INTERRUPT_PIN, INPUT);
+  mpu.CalibrateAccel();
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+  mpu.setDLPFMode(MPU6050_DLPF_BW_20);
 
-  // verify connection
-  Serial.println(F("Testing device connections..."));
-  Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+  Serial.println("Testing device connections...");
+  Serial.println(mpu.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
 
-  // wait for ready
-  Serial.println(F("\nSend any character to begin DMP programming and demo: "));
-  while (Serial.available() && Serial.read())
-    ; // empty buffer
-  while (!Serial.available())
-    ; // wait for data
-  while (Serial.available() && Serial.read())
-    ; // empty buffer again
-
-  // load and configure the DMP
-  Serial.println(F("Initializing DMP..."));
-  devStatus = mpu.dmpInitialize();
-
-  // supply your own gyro offsets here, scaled for min sensitivity
-  mpu.setXGyroOffset(220);
-  mpu.setYGyroOffset(76);
-  mpu.setZGyroOffset(-85);
-  mpu.setZAccelOffset(1788); // 1688 factory default for my test chip
-
-  // make sure it worked (returns 0 if so)
-  if (devStatus == 0)
-  {
-    // Calibration Time: generate offsets and calibrate our MPU6050
-    mpu.CalibrateAccel(6);
-    mpu.CalibrateGyro(6);
-    mpu.PrintActiveOffsets();
-    // turn on the DMP, now that it's ready
-    Serial.println(F("Enabling DMP..."));
-    mpu.setDMPEnabled(true);
-
-    // enable Arduino interrupt detection
-    Serial.print(F("Enabling interrupt detection (Arduino external interrupt "));
-    Serial.print(digitalPinToInterrupt(INTERRUPT_PIN));
-    Serial.println(F(")..."));
-    attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), dmpDataReady, RISING);
-    mpuIntStatus = mpu.getIntStatus();
-
-    // set our DMP Ready flag so the main loop() function knows it's okay to use it
-    Serial.println(F("DMP ready! Waiting for first interrupt..."));
-    dmpReady = true;
-
-    mpu.setDLPFMode(MPU6050_DLPF_BW_188);
-    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2); // divide by 16384 to get G's
-
-    // get expected DMP packet size for later comparison
-    packetSize = mpu.dmpGetFIFOPacketSize();
-  }
-  else
-  {
-    // ERROR!
-    // 1 = initial memory load failed
-    // 2 = DMP configuration updates failed
-    // (if it's going to break, usually the code will be 1)
-    Serial.print(F("DMP Initialization failed (code "));
-    Serial.print(devStatus);
-    Serial.println(F(")"));
-  }
-
+  //******************************************
+  // Motor PWM
+  //******************************************
+  /*
+  analogWriteResolution(10);
+  pinMode(MOTOR_PIN, OUTPUT);
+  analogWrite(MOTOR_PIN,550);
+  */
+  tone(MOTOR_PIN, 20000);
   //******************************************
   // Distance Sensor
   //******************************************
@@ -185,16 +125,22 @@ void setup()
   tcaselect(1);
 
   encoder.begin();
-
 }
 
 void loop()
 {
+  uint32_t stopwatch = micros();
   processEccentricEncoder();
+
+  followRoller ();
   processSuspensionEncoder();
   processDistanceSensor();
   processMPU();
+  
+  Serial.print(",");
+  Serial.print(micros() - stopwatch);
   Serial.println();
+  
 }
 
 void processEccentricEncoder()
@@ -231,29 +177,14 @@ void processDistanceSensor()
   Serial.print(",");
 }
 
+float_t previousAcceleration;
 void processMPU()
 {
   tcaselect(3);
-  // !!!!!!!!!! MPU6050_DMP_FIFO_RATE_DIVISOR is set to 0x4 to prevent overflows in the file MPU6050_6Axis_MotionApps20.cpp
-  if (!dmpReady)
-    return;
-  // read a packet from FIFO
-  if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer))
-  {
-    // Get the Latest packet
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetAccel(&aa, fifoBuffer);
-    mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
-    mpu.dmpGetLinearAccelInWorld(&aaWorld, &aaReal, &q);
-    // Serial.print("aworld\t");
-    // Serial.print(aaWorld.x);
-    // Serial.print("\t");
-    // Serial.print(aaWorld.y);
-    // Serial.print("\t");
-    acceleration = (aaWorld.z) / 1671.83; // m/s2
-  }
+  acceleration = (mpu.getAccelerationZ() / 1671.83) - 9.8; // m/s2
+  acceleration = EMA_function(0.4, acceleration, previousAcceleration);
   Serial.print(acceleration);
+  previousAcceleration = acceleration;
 }
 
 /*************************************************************************************
@@ -265,3 +196,30 @@ float EMA_function(float alpha, float latest, float stored)
 }
 
 // 18ms loop time
+
+float_t calculateRollerDistance(uint16_t angle)
+{
+  const uint16_t offsetAngle = 215;  //145 base offset plus some lag angle
+  return sin((angle - offsetAngle) * 0.0174533) * 5;
+}
+
+void moveSuspensionDistance(float_t distance)
+{
+  const float_t armRatio = 1.69;
+  float_t servoArmDistance = distance / armRatio;
+
+  float_t servoAngle = atan(servoArmDistance / 25); // In radians
+  int16_t microseconds = 318.33 * servoAngle +1450; //Converte angle in radians to microseconds for servo
+  servo.writeMicroseconds(microseconds);
+  Serial.print(microseconds);
+    Serial.print(",");
+}
+
+void followRoller ()
+{
+  tcaselect(2);
+  float_t currentAngle = encoder.readAngle() * 0.0879;
+  float_t distance = calculateRollerDistance(currentAngle);
+  
+  moveSuspensionDistance(distance);
+}

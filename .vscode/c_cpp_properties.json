@@ -10,6 +10,7 @@
             "includePath": [
                 "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/include",
                 "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/src",
+                "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/Servo/src",
                 "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/adafruit_qt_py_m0/DFRobot_VL6180X",
                 "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/adafruit_qt_py_m0/I2Cdevlib-MPU6050",
                 "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/adafruit_qt_py_m0/I2Cdevlib-Core",
@@ -31,7 +32,6 @@
                 "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/SAMD_AnalogCorrection/src",
                 "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/SDU/src",
                 "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/SPI",
-                "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/Servo/src",
                 "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/USBHost/src",
                 ""
             ],
@@ -40,6 +40,7 @@
                 "path": [
                     "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/include",
                     "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/src",
+                    "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/Servo/src",
                     "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/adafruit_qt_py_m0/DFRobot_VL6180X",
                     "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/adafruit_qt_py_m0/I2Cdevlib-MPU6050",
                     "d:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/adafruit_qt_py_m0/I2Cdevlib-Core",
@@ -61,7 +62,6 @@
                     "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/SAMD_AnalogCorrection/src",
                     "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/SDU/src",
                     "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/SPI",
-                    "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/Servo/src",
                     "C:/Users/brian/.platformio/packages/framework-arduino-samd-adafruit/libraries/USBHost/src",
                     ""
                 ]

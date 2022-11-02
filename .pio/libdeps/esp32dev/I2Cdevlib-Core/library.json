@@ -1,0 +1,26 @@
+{
+  "name": "I2Cdevlib-Core",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jrowberg/i2cdevlib.git"
+  },
+  "platforms": [
+    "*"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "dependencies": [
+    {
+      "name": "Wire",
+      "version": "*"
+    }
+  ],
+  "version": "1.0.0",
+  "export": {},
+  "keywords": [
+    "i2cdevlib",
+    "i2c"
+  ],
+  "description": "The I2C Device Library (I2Cdevlib) is a collection of uniform and well-documented classes to provide simple and intuitive interfaces to I2C devices."
+}

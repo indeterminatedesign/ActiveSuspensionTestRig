@@ -4,7 +4,7 @@
 #include <AS5600.h>
 #include <I2Cdev.h>
 #include <MPU6050.h>
-#include <Servo.h>
+#include <ESP32Servo.h>
 
 AS5600 encoder;
 Servo servo;
@@ -15,23 +15,30 @@ float_t acceleration;
 
 volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
 
-#define MOTOR_PIN A1
+#define MOTOR_PIN 32
 #define INTERRUPT_PIN 2
 #define TCAADDR 0x70
 
 uint8_t ret = 1;
 volatile uint8_t flag = 0;
 
-DFRobot_VL6180X VL6180X;
+const int freq = 30000;
+const int pwmChannel = 0;
+const int resolution = 8;
+int dutyCycle = 150;
+double_t previousAngle = 0;
+// DFRobot_VL6180X VL6180X;
 
 void processMPU();
-void processEccentricEncoder();
-void processSuspensionEncoder();
+float_t processEccentricEncoder();
+float_t processSuspensionEncoder();
+float_t processSprungMassEncoder();
 void processDistanceSensor();
 void tcaselect(uint8_t i);
 float_t calculateDistance(uint16_t angle);
 void moveSuspensionDistance(float_t distance);
-void followRoller ();
+uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle);
+void followRoller();
 
 // ISR for VL6180X
 void interrupt()
@@ -59,6 +66,8 @@ void setup()
   Serial.begin(500000);
   Wire.begin();
   Wire.setClock(400000);
+
+  /*
   //******************************************
   // Servo
   //******************************************
@@ -78,148 +87,195 @@ void setup()
 
   Serial.println("Testing device connections...");
   Serial.println(mpu.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+  */
 
   //******************************************
   // Motor PWM
   //******************************************
-  /*
-  analogWriteResolution(10);
   pinMode(MOTOR_PIN, OUTPUT);
-  analogWrite(MOTOR_PIN,550);
-  */
-  tone(MOTOR_PIN, 20000);
+  ledcSetup(pwmChannel, freq, resolution);
+
+  // attach the channel to the GPIO to be controlled
+  ledcAttachPin(MOTOR_PIN, pwmChannel);
+
+  ledcWrite(pwmChannel, dutyCycle);
+
   //******************************************
   // Distance Sensor
   //******************************************
-  tcaselect(0);
+  // tcaselect(0);
 
-  while (!(VL6180X.begin()))
-  {
-    Serial.println("Please check that the IIC device is properly connected!");
-    delay(1000);
-  }
-  VL6180X.setInterrupt(/*mode*/ VL6180X_HIGH_INTERRUPT);
+  //  while (!(VL6180X.begin()))
+  // {
+  //    Serial.println("Please check that the IIC device is properly connected!");
+  //   delay(1000);
+  // }
+  // VL6180X.setInterrupt(/*mode*/ VL6180X_HIGH_INTERRUPT);
 
-  VL6180X.rangeConfigInterrupt(VL6180X_OUT_OF_WINDOW);
+  // VL6180X.rangeConfigInterrupt(VL6180X_OUT_OF_WINDOW);
 
   /*Set the range measurement period*/
-  VL6180X.rangeSetInterMeasurementPeriod(/* periodMs 0-25500ms */ 30);
+  // VL6180X.rangeSetInterMeasurementPeriod(/* periodMs 0-25500ms */ 30);
 
   /*Set threshold value*/
-  VL6180X.setRangeThresholdValue(/*thresholdL 0-255mm */ 40, /*thresholdH 0-255mm*/ 100);
+  // VL6180X.setRangeThresholdValue(/*thresholdL 0-255mm */ 40, /*thresholdH 0-255mm*/ 100);
 
-#if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_SAM_ZERO)
-  attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN) /*Query the interrupt number of the D9 pin*/, interrupt, FALLING);
-#else
-  attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), interrupt, FALLING); // Enable the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-                                                                             // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
-#endif
+  //#if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_SAM_ZERO)
+  // attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN) , interrupt, FALLING);
+  //#else
+  // attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), interrupt, FALLING); // Enable the external interrupt 0, connect INT1/2 to the digital pin of the main control:
+  // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  //#endif
 
   /*Start continuous range measuring mode */
-  VL6180X.rangeStartContinuousMode();
-  delay(500);
+  // VL6180X.rangeStartContinuousMode();
+  // delay(500);
 
   //******************************************
   // Encoders
   //******************************************
   tcaselect(1);
-
-  encoder.begin();
 }
 
 void loop()
 {
   uint32_t stopwatch = micros();
-  processEccentricEncoder();
+  float_t currentAngle = processEccentricEncoder();
 
-  followRoller ();
+  // followRoller();
   processSuspensionEncoder();
-  processDistanceSensor();
-  processMPU();
-  
+  processSprungMassEncoder();
+  // processDistanceSensor();
+  // processMPU();
+
+  uint32_t timeElapsed = micros() - stopwatch;
+  Serial.print(timeElapsed);
   Serial.print(",");
-  Serial.print(micros() - stopwatch);
+  calculateRPM(timeElapsed, currentAngle);
   Serial.println();
-  
 }
 
-void processEccentricEncoder()
+float_t processEccentricEncoder()
 {
   tcaselect(2);
-  Serial.print(encoder.readAngle() * 0.0879);
+  float_t angle = encoder.readAngle() * 0.0879;
+  Serial.print(angle);
   Serial.print(",");
+  return angle;
 }
-void processSuspensionEncoder()
+float_t processSuspensionEncoder()
 {
   tcaselect(1);
-  Serial.print(encoder.readAngle() * 0.0879);
+  float_t angle = encoder.readAngle() * 0.0879;
+  Serial.print(angle);
   Serial.print(",");
+  return angle;
 }
-
-uint16_t distance;
-
-void processDistanceSensor()
+float_t processSprungMassEncoder()
 {
   tcaselect(0);
-  if (flag == 1)
-  {
-    flag = 0;
-    if (VL6180X.rangeGetInterruptStatus() == VL6180X_OUT_OF_WINDOW)
-    {
-      /*Get the measured distance data*/
-      uint8_t range = VL6180X.rangeGetMeasurement();
-      distance = range;
-      /*Clear interrupts generated by measuring range*/
-      VL6180X.clearRangeInterrupt();
-    }
-  }
-  Serial.print(distance);
+  float_t angle = encoder.readAngle() * 0.0879;
+  Serial.print(angle);
   Serial.print(",");
+  return angle;
 }
 
-float_t previousAcceleration;
-void processMPU()
+uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle)
 {
-  tcaselect(3);
-  acceleration = (mpu.getAccelerationZ() / 1671.83) - 9.8; // m/s2
-  acceleration = EMA_function(0.4, acceleration, previousAcceleration);
-  Serial.print(acceleration);
-  previousAcceleration = acceleration;
-}
+  /*
+  Serial.println("CurrentAngle, Previous Angle, Time Elapsed");
+  Serial.print(currentAngle);
+  Serial.print(",");
+  Serial.print(previousAngle);
+  Serial.print(",");
+  Serial.print(timeElapsed);
 
-/*************************************************************************************
-  EMA Function (Simple Filter)
-***********************************************************************************/
-float EMA_function(float alpha, float latest, float stored)
-{
-  return (alpha * latest) + ((1 - alpha) * stored);
-}
+  Serial.println("");
+*/
+  // Need to check for exceeding 360 as a roll over
+  double_t tempAngle = currentAngle;
+  if (tempAngle > previousAngle)
+  {
+    tempAngle -= 360;
+  }
+  /*
+  Serial.print("Delta T");
+  Serial.print(((double)timeElapsed /1.00e06),6);
+  Serial.print(",");
+  Serial.print("Part of Rotation");
+  Serial.print(.1667 *(currentAngle - previousAngle),6);
+  Serial.print(",");
+  */
 
-// 18ms loop time
-
-float_t calculateRollerDistance(uint16_t angle)
-{
-  const uint16_t offsetAngle = 215;  //145 base offset plus some lag angle
-  return sin((angle - offsetAngle) * 0.0174533) * 5;
-}
-
-void moveSuspensionDistance(float_t distance)
-{
-  const float_t armRatio = 1.69;
-  float_t servoArmDistance = distance / armRatio;
-
-  float_t servoAngle = atan(servoArmDistance / 25); // In radians
-  int16_t microseconds = 318.33 * servoAngle +1450; //Converte angle in radians to microseconds for servo
-  servo.writeMicroseconds(microseconds);
-  Serial.print(microseconds);
+    float_t rpm = -.1667 * (tempAngle - previousAngle) / ((double)timeElapsed / 1.00e06);
+    previousAngle = currentAngle;
+    Serial.print(rpm);
     Serial.print(",");
-}
+    return rpm;
+  }
 
-void followRoller ()
-{
-  tcaselect(2);
-  float_t currentAngle = encoder.readAngle() * 0.0879;
-  float_t distance = calculateRollerDistance(currentAngle);
-  
-  moveSuspensionDistance(distance);
-}
+  uint16_t distance;
+  /*
+  void processDistanceSensor()
+  {
+    tcaselect(0);
+    if (flag == 1)
+    {
+      flag = 0;
+      if (VL6180X.rangeGetInterruptStatus() == VL6180X_OUT_OF_WINDOW)
+      {
+        uint8_t range = VL6180X.rangeGetMeasurement();
+        distance = range;
+           VL6180X.clearRangeInterrupt();
+      }
+    }
+    Serial.print(distance);
+    Serial.print(",");
+  }
+  */
+  float_t previousAcceleration;
+  void processMPU()
+  {
+    tcaselect(3);
+    acceleration = (mpu.getAccelerationZ() / 1671.83) - 9.8; // m/s2
+    acceleration = EMA_function(0.4, acceleration, previousAcceleration);
+    Serial.print(acceleration);
+    previousAcceleration = acceleration;
+  }
+
+  /*************************************************************************************
+    EMA Function (Simple Filter)
+  ***********************************************************************************/
+  float EMA_function(float alpha, float latest, float stored)
+  {
+    return (alpha * latest) + ((1 - alpha) * stored);
+  }
+
+  // 18ms loop time
+
+  float_t calculateRollerDistance(uint16_t angle)
+  {
+    const uint16_t offsetAngle = 215; // 145 base offset plus some lag angle
+    return sin((angle - offsetAngle) * 0.0174533) * 5;
+  }
+
+  void moveSuspensionDistance(float_t distance)
+  {
+    const float_t armRatio = 1.69;
+    float_t servoArmDistance = distance / armRatio;
+
+    float_t servoAngle = atan(servoArmDistance / 25);  // In radians
+    int16_t microseconds = 318.33 * servoAngle + 1450; // Converte angle in radians to microseconds for servo
+    servo.writeMicroseconds(microseconds);
+    Serial.print(microseconds);
+    Serial.print(",");
+  }
+
+  void followRoller()
+  {
+    tcaselect(2);
+    float_t currentAngle = encoder.readAngle() * 0.0879;
+    float_t distance = calculateRollerDistance(currentAngle);
+
+    moveSuspensionDistance(distance);
+  }

@@ -12,6 +12,7 @@ Servo servo;
 MPU6050 mpu;
 
 float_t acceleration;
+bool runBegan = false;
 
 volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
 
@@ -22,8 +23,10 @@ volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has g
 uint8_t ret = 1;
 volatile uint8_t flag = 0;
 
-uint32_t previousTime = 0;
-uint16_t sampleInterval = 10000;
+uint32_t previousSampleTime = 0;
+uint32_t delayForMotorTriggerTime = 0;
+const uint16_t sampleInterval = 10000;
+const uint32_t delayForMotor = 2000000; // Gives motor RPM time to settle before starting run
 
 const int freq = 30000;
 const int pwmChannel = 0;
@@ -35,9 +38,9 @@ double_t previousAngle = 0;
 // DFRobot_VL6180X VL6180X;
 
 // Motor PID Settings
-const float_t kP = .5;
-const float_t kI = 0.0;
-const float_t kD = 0.3;
+const float_t kP = .025;
+const float_t kI = .000000005;
+const float_t kD = .00005;
 
 void processMPU();
 float_t processEccentricEncoder();
@@ -110,8 +113,6 @@ void setup()
   // attach the channel to the GPIO to be controlled
   ledcAttachPin(MOTOR_PIN, pwmChannel);
 
-  ledcWrite(pwmChannel, dutyCycle);
-
   //******************************************
   // Distance Sensor
   //******************************************
@@ -150,28 +151,43 @@ void setup()
 
   // Take in Parameters from Serial
   receiveConfigParameters();
+
+  // Temp fix due to PID tuning issues
+  // ledcWrite(pwmChannel, targetRPM);
 }
 
 void loop()
 {
-  uint32_t timeElapsed = micros() - previousTime;
+  uint32_t timeElapsed = micros() - previousSampleTime;
+
+  if (delayForMotorTriggerTime > 0 && micros() - delayForMotorTriggerTime > delayForMotor)
+  {
+    runBegan = true;
+  }
+
   if (timeElapsed > sampleInterval)
   {
     float_t currentAngle = processEccentricEncoder();
     uint16_t rpm = calculateRPM(timeElapsed, currentAngle);
     // followRoller();
-    controlMotorSpeed(100, rpm, timeElapsed);
-    processSuspensionEncoder();
-    processSprungMassEncoder();
-    // processDistanceSensor();
-    // processMPU();
+    controlMotorSpeed(targetRPM, rpm, timeElapsed);
 
-    Serial.print(timeElapsed);
-    Serial.print(",");
+    if (runBegan)
+    {
 
-    Serial.println();
+      Serial.print(processSuspensionEncoder());
+      Serial.print(",");
+      Serial.print(processSprungMassEncoder());
+      Serial.print(",");
+      // processDistanceSensor();
+      // processMPU();
 
-    previousTime = micros();
+      Serial.print(timeElapsed);
+      Serial.print(",");
+
+      Serial.println();
+    }
+    previousSampleTime = micros();
   }
 }
 
@@ -179,30 +195,30 @@ float_t processEccentricEncoder()
 {
   tcaselect(2);
   float_t angle = encoder.readAngle() * 0.0879;
-  Serial.print(angle);
-  Serial.print(",");
   return angle;
 }
 float_t processSuspensionEncoder()
 {
   tcaselect(1);
   float_t angle = encoder.readAngle() * 0.0879;
-  Serial.print(angle);
-  Serial.print(",");
   return angle;
 }
 float_t processSprungMassEncoder()
 {
   tcaselect(0);
   float_t angle = encoder.readAngle() * 0.0879;
-  Serial.print(angle);
-  Serial.print(",");
   return angle;
 }
 
 uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle)
 {
   static uint16_t previousRPM;
+
+  if (fabs(currentAngle - previousAngle) < 0.8)
+  {
+    return 0;
+  }
+
   /*
   Serial.println("CurrentAngle, Previous Angle, Time Elapsed");
   Serial.print(currentAngle);
@@ -229,11 +245,14 @@ uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle)
   */
 
   float_t rpm = -.1667 * (tempAngle - previousAngle) / ((double)timeElapsed / 1.00e06);
-  rpm = EMA_function(0.8, rpm, previousRPM);
+  rpm = EMA_function(0.6, rpm, previousRPM);
   previousRPM = rpm;
   previousAngle = currentAngle;
-  Serial.print(rpm);
-  Serial.print(",");
+  if (runBegan)
+  {
+    Serial.print(rpm);
+    Serial.print(",");
+  }
   return rpm;
 }
 
@@ -252,13 +271,9 @@ void controlMotorSpeed(uint16_t targetRPM, uint16_t currentRPM, uint32_t dt)
   cumulativeError += error * dt;
   float_t kIComponent = kI * cumulativeError;
 
-  // Constrain that integral
-  kIComponent = constrain(kIComponent, -150, 150);
-
-  int16_t correction = kP * error + kIComponent + kD * rateError;
+  float_t correction = kP * error + kIComponent + kD * rateError;
 
   output += correction;
-
   // Make sure the ESC doesn't recieve a signal it can't use and cap the upper limit
   output = constrain(output, 0, 255);
 #ifdef DEBUG
@@ -268,7 +283,7 @@ void controlMotorSpeed(uint16_t targetRPM, uint16_t currentRPM, uint32_t dt)
   Serial.print("Current RPM: ");
   Serial.println(currentRPM);
 #endif
-
+  // TODO:  Fix PID Calc
   ledcWrite(pwmChannel, output);
 
   previousError = error;
@@ -375,6 +390,8 @@ void receiveConfigParameters()
 
   // Convert character array into an integer for RPM
   targetRPM = atoi(receivedChars);
+  // Start the timer to wait for motor to reach target speed
+  delayForMotorTriggerTime = micros();
 
   Serial.print("Target RPM: ");
   Serial.println(targetRPM);

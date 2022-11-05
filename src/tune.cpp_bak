@@ -1,0 +1,217 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <AS5600.h>
+#include <I2Cdev.h>
+#include <MPU6050.h>
+#include <ESP32Servo.h>
+#include <PIDAutotuner.h>
+
+AS5600 encoder;
+Servo servo;
+
+MPU6050 mpu;
+
+float_t acceleration;
+
+volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
+
+#define MOTOR_PIN 32
+#define INTERRUPT_PIN 2
+#define TCAADDR 0x70
+
+uint8_t ret = 1;
+volatile uint8_t flag = 0;
+
+uint32_t previousTime = 0;
+uint16_t sampleInterval = 10000;
+
+const int freq = 30000;
+const int pwmChannel = 0;
+const int resolution = 8;
+uint16_t dutyCycle = 150;
+uint16_t targetRPM = 150;
+
+double_t previousAngle = 0;
+// DFRobot_VL6180X VL6180X;
+
+void processMPU();
+float_t processEccentricEncoder();
+void processDistanceSensor();
+void tcaselect(uint8_t i);
+float_t calculateDistance(uint16_t angle);
+void moveSuspensionDistance(float_t distance);
+uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle);
+void followRoller();
+void controlMotorSpeed(uint16_t targetRPM, uint16_t currentRPM, uint32_t dt);
+void receiveConfigParameters();
+
+// ISR for VL6180X
+void interrupt()
+{
+  if (flag == 0)
+  {
+    flag = 1;
+  }
+}
+
+float EMA_function(float alpha, float latest, float stored);
+
+void tcaselect(uint8_t i)
+{
+  if (i > 7)
+    return;
+
+  Wire.beginTransmission(TCAADDR);
+  Wire.write(1 << i);
+  Wire.endTransmission();
+}
+
+void setup()
+{
+  Serial.begin(500000);
+  Wire.begin();
+  Wire.setClock(400000);
+
+  //******************************************
+  // Motor PWM
+  //******************************************
+  pinMode(MOTOR_PIN, OUTPUT);
+  ledcSetup(pwmChannel, freq, resolution);
+
+  // attach the channel to the GPIO to be controlled
+  ledcAttachPin(MOTOR_PIN, pwmChannel);
+
+  // ledcWrite(pwmChannel, dutyCycle);
+
+  PIDAutotuner tuner = PIDAutotuner();
+
+  // Set the target value to tune to
+  // This will depend on what you are tuning. This should be set to a value within
+  // the usual range of the setpoint. For low-inertia systems, values at the lower
+  // end of this range usually give better results. For anything else, start with a
+  // value at the middle of the range.
+  tuner.setTargetInputValue(120);
+
+  // Set the loop interval in microseconds
+  // This must be the same as the interval the PID control loop will run at
+  tuner.setLoopInterval(10006);
+
+  // Set the output range
+  // These are the minimum and maximum possible output values of whatever you are
+  // using to control the system (Arduino analogWrite, for example, is 0-255)
+  tuner.setOutputRange(0, 1024);
+
+  // Set the Ziegler-Nichols tuning mode
+  // Set it to either PIDAutotuner::ZNModeBasicPID, PIDAutotuner::ZNModeLessOvershoot,
+  // or PIDAutotuner::ZNModeNoOvershoot. Defaults to ZNModeNoOvershoot as it is the
+  // safest option.
+  tuner.setZNMode(PIDAutotuner::znModeBasicPID);
+
+  // This must be called immediately before the tuning loop
+  // Must be called with the current time in microseconds
+  tuner.startTuningLoop();
+
+  // Run a loop until tuner.isFinished() returns true
+  long microseconds;
+  while (!tuner.isFinished())
+  {
+
+    // This loop must run at the same speed as the PID control loop being tuned
+    long prevMicroseconds = microseconds;
+    microseconds = micros();
+
+    // Get input value here (temperature, encoder position, velocity, etc)
+
+    float_t currentAngle = processEccentricEncoder();
+    uint16_t rpm = calculateRPM(10006, currentAngle);
+    double input = rpm;
+
+    // Call tunePID() with the input value and current time in microseconds
+    double output = tuner.tunePID(input);
+
+    // Set the output - tunePid() will return values within the range configured
+    // by setOutputRange(). Don't change the value or the tuning results will be
+    // incorrect.
+   ledcWrite(pwmChannel, output);
+
+    // This loop must run at the same speed as the PID control loop being tuned
+    while (micros() - microseconds < 10006)
+      delayMicroseconds(1);
+  }
+
+  // Turn the output off here.
+  ledcWrite(pwmChannel, 0);
+
+  // Get PID gains - set your PID controller's gains to these
+  double kp = tuner.getKp();
+  double ki = tuner.getKi();
+  double kd = tuner.getKd();
+  Serial.println("***************************************");
+  Serial.print("kp ");
+  Serial.println(kp);
+  Serial.print("ki ");
+  Serial.println(ki);
+    Serial.print("kd ");
+  Serial.println(kd);
+}
+
+void loop()
+{
+
+}
+
+float_t processEccentricEncoder()
+{
+  tcaselect(2);
+  float_t angle = encoder.readAngle() * 0.0879;
+  Serial.print(angle);
+  Serial.print(",");
+  return angle;
+}
+
+uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle)
+{
+  static uint16_t previousRPM;
+  /*
+  Serial.println("CurrentAngle, Previous Angle, Time Elapsed");
+  Serial.print(currentAngle);
+  Serial.print(",");
+  Serial.print(previousAngle);
+  Serial.print(",");
+  Serial.print(timeElapsed);
+
+  Serial.println("");
+*/
+  // Need to check for exceeding 360 as a roll over
+  double_t tempAngle = currentAngle;
+  if (tempAngle > previousAngle)
+  {
+    tempAngle -= 360;
+  }
+  /*
+  Serial.print("Delta T");
+  Serial.print(((double)timeElapsed /1.00e06),6);
+  Serial.print(",");
+  Serial.print("Part of Rotation");
+  Serial.print(.1667 *(currentAngle - previousAngle),6);
+  Serial.print(",");
+  */
+
+  float_t rpm = -.1667 * (tempAngle - previousAngle) / ((double)timeElapsed / 1.00e06);
+  rpm = EMA_function(0.6, rpm, previousRPM);
+  previousRPM = rpm;
+  previousAngle = currentAngle;
+  Serial.print(rpm);
+  Serial.print(",");
+  return rpm;
+}
+
+/*************************************************************************************
+  EMA Function (Simple Filter)
+***********************************************************************************/
+float EMA_function(float alpha, float latest, float stored)
+{
+  return (alpha * latest) + ((1 - alpha) * stored);
+}
+
+// 18ms loop time

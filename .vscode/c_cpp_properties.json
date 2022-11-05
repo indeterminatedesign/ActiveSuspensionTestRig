@@ -10,6 +10,7 @@
             "includePath": [
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/include",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/src",
+                "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/PID Autotuner",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/ESP32Servo/src",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/DFRobot_VL6180X",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/I2Cdevlib-MPU6050",
@@ -230,6 +231,7 @@
                 "path": [
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/include",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/src",
+                    "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/PID Autotuner",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/ESP32Servo/src",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/DFRobot_VL6180X",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/I2Cdevlib-MPU6050",

@@ -1,5 +1,5 @@
 dfrobot/DFRobot_VL6180X@^1.0.0
 jrowberg/I2Cdevlib-MPU6050@^1.0.0
-robtillaart/AS5600@^0.1.2
 jackw01/PID Autotuner@^1.0
-madhephaestus/ESP32Servo@^0.9.0
+madhephaestus/ESP32Servo@^0.12.0
+robtillaart/AS5600@^0.1.2

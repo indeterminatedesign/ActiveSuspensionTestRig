@@ -5,6 +5,7 @@
 #include <I2Cdev.h>
 #include <MPU6050.h>
 #include <ESP32Servo.h>
+#include <WiFi.h>
 
 AS5600 encoder;
 Servo servo;
@@ -17,6 +18,7 @@ bool runBegan = false;
 volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has gone high
 
 #define MOTOR_PIN 32
+#define SERVO_PIN 33
 #define INTERRUPT_PIN 2
 #define TCAADDR 0x70
 
@@ -26,10 +28,10 @@ volatile uint8_t flag = 0;
 uint32_t previousSampleTime = 0;
 uint32_t delayForMotorTriggerTime = 0;
 const uint16_t sampleInterval = 10000;
-const uint32_t delayForMotor = 2000000; // Gives motor RPM time to settle before starting run
+const uint32_t delayForMotor = 4000000; // Gives motor RPM time to settle before starting run
 
 const int freq = 30000;
-const int pwmChannel = 0;
+const int pwmChannel = 10;
 const int resolution = 8;
 uint16_t dutyCycle = 150;
 uint16_t targetRPM = 150;
@@ -38,20 +40,20 @@ double_t previousAngle = 0;
 // DFRobot_VL6180X VL6180X;
 
 // Motor PID Settings
-const float_t kP = .025;
-const float_t kI = .000000005;
-const float_t kD = .00005;
+const float_t kP = .023;
+const float_t kI = .000000001;
+const float_t kD = .075;
 
 void processMPU();
 float_t processEccentricEncoder();
-float_t processSuspensionEncoder();
+float_t processSuspensionArmEncoder();
 float_t processSprungMassEncoder();
 void processDistanceSensor();
-void tcaselect(uint8_t i);
+void selectEncoder(uint8_t i);
 float_t calculateDistance(uint16_t angle);
 void moveSuspensionDistance(float_t distance);
 uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle);
-void followRoller();
+void followRoller(float_t currentAngle);
 void controlMotorSpeed(uint16_t targetRPM, uint16_t currentRPM, uint32_t dt);
 void receiveConfigParameters();
 
@@ -66,7 +68,7 @@ void interrupt()
 
 float EMA_function(float alpha, float latest, float stored);
 
-void tcaselect(uint8_t i)
+void selectEncoder(uint8_t i)
 {
   if (i > 7)
     return;
@@ -78,36 +80,37 @@ void tcaselect(uint8_t i)
 
 void setup()
 {
+  WiFi.mode(WIFI_OFF);
   Serial.begin(500000);
   Wire.begin();
   Wire.setClock(400000);
 
-  /*
   //******************************************
   // Servo
   //******************************************
-  servo.attach(0);
-  servo.writeMicroseconds(1500);
+  //servo.setPeriodHertz(330);
+  servo.attach(SERVO_PIN);
+  servo.writeMicroseconds(1450);
 
-  //******************************************
-  // MPU
-  //******************************************
-  tcaselect(3);
-  // initialize device
-  Serial.println(F("Initializing I2C devices..."));
-  mpu.initialize();
-  mpu.CalibrateAccel();
-  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
-  mpu.setDLPFMode(MPU6050_DLPF_BW_20);
+  /*
+    //******************************************
+    // MPU
+    //******************************************
+    tcaselect(3);
+    // initialize device
+    Serial.println(F("Initializing I2C devices..."));
+    mpu.initialize();
+    mpu.CalibrateAccel();
+    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+    mpu.setDLPFMode(MPU6050_DLPF_BW_20);
 
-  Serial.println("Testing device connections...");
-  Serial.println(mpu.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
-  */
+    Serial.println("Testing device connections...");
+    Serial.println(mpu.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+    */
 
   //******************************************
   // Motor PWM
   //******************************************
-  pinMode(MOTOR_PIN, OUTPUT);
   ledcSetup(pwmChannel, freq, resolution);
 
   // attach the channel to the GPIO to be controlled
@@ -147,7 +150,7 @@ void setup()
   //******************************************
   // Encoders
   //******************************************
-  tcaselect(1);
+  selectEncoder(1);
 
   // Take in Parameters from Serial
   receiveConfigParameters();
@@ -169,18 +172,21 @@ void loop()
   {
     float_t currentAngle = processEccentricEncoder();
     uint16_t rpm = calculateRPM(timeElapsed, currentAngle);
-    // followRoller();
     controlMotorSpeed(targetRPM, rpm, timeElapsed);
 
     if (runBegan)
     {
-
-      Serial.print(processSuspensionEncoder());
+      Serial.print(currentAngle);
+      Serial.print(",");
+      Serial.print(rpm);
+      Serial.print(",");
+      Serial.print(processSuspensionArmEncoder());
       Serial.print(",");
       Serial.print(processSprungMassEncoder());
       Serial.print(",");
       // processDistanceSensor();
       // processMPU();
+       followRoller(currentAngle);
 
       Serial.print(timeElapsed);
       Serial.print(",");
@@ -193,19 +199,19 @@ void loop()
 
 float_t processEccentricEncoder()
 {
-  tcaselect(2);
+  selectEncoder(2);
   float_t angle = encoder.readAngle() * 0.0879;
   return angle;
 }
-float_t processSuspensionEncoder()
+float_t processSuspensionArmEncoder()
 {
-  tcaselect(1);
+  selectEncoder(1);
   float_t angle = encoder.readAngle() * 0.0879;
   return angle;
 }
 float_t processSprungMassEncoder()
 {
-  tcaselect(0);
+  selectEncoder(0);
   float_t angle = encoder.readAngle() * 0.0879;
   return angle;
 }
@@ -248,11 +254,6 @@ uint16_t calculateRPM(uint32_t timeElapsed, double_t currentAngle)
   rpm = EMA_function(0.6, rpm, previousRPM);
   previousRPM = rpm;
   previousAngle = currentAngle;
-  if (runBegan)
-  {
-    Serial.print(rpm);
-    Serial.print(",");
-  }
   return rpm;
 }
 
@@ -270,6 +271,7 @@ void controlMotorSpeed(uint16_t targetRPM, uint16_t currentRPM, uint32_t dt)
 
   cumulativeError += error * dt;
   float_t kIComponent = kI * cumulativeError;
+  kIComponent = constrain(kIComponent, -50, 50);
 
   float_t correction = kP * error + kIComponent + kD * rateError;
 
@@ -311,7 +313,7 @@ void processDistanceSensor()
 float_t previousAcceleration;
 void processMPU()
 {
-  tcaselect(3);
+  selectEncoder(3);
   acceleration = (mpu.getAccelerationZ() / 1671.83) - 9.8; // m/s2
   acceleration = EMA_function(0.4, acceleration, previousAcceleration);
   Serial.print(acceleration);
@@ -336,22 +338,20 @@ float_t calculateRollerDistance(uint16_t angle)
 
 void moveSuspensionDistance(float_t distance)
 {
-  const float_t armRatio = 1.69;
-  float_t servoArmDistance = distance / armRatio;
+  const float_t armRatio = 1.83;  //Ratio between control arm total length and the of the pivot arm and where it is actuated
+  float_t servoToControlArmDistance = distance / armRatio;
+  const float_t servoArmPivotLenght = 20;  //Distance from center to pivot point on servo arm itself
 
-  float_t servoAngle = atan(servoArmDistance / 25);  // In radians
+  float_t servoAngle = atan(servoToControlArmDistance / servoArmPivotLenght);  // In radians
   int16_t microseconds = 318.33 * servoAngle + 1450; // Converte angle in radians to microseconds for servo
   servo.writeMicroseconds(microseconds);
   Serial.print(microseconds);
   Serial.print(",");
 }
 
-void followRoller()
+void followRoller(float_t currentAngle)
 {
-  tcaselect(2);
-  float_t currentAngle = encoder.readAngle() * 0.0879;
   float_t distance = calculateRollerDistance(currentAngle);
-
   moveSuspensionDistance(distance);
 }
 

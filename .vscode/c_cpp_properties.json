@@ -10,8 +10,9 @@
             "includePath": [
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/include",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/src",
-                "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/PID Autotuner",
+                "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/ESP32Servo/src",
+                "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/PID Autotuner",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/DFRobot_VL6180X",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/I2Cdevlib-MPU6050",
                 "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/I2Cdevlib-Core",
@@ -221,7 +222,6 @@
                 "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                 "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                 "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                 "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                 ""
@@ -231,8 +231,9 @@
                 "path": [
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/include",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/src",
-                    "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/PID Autotuner",
+                    "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/ESP32Servo/src",
+                    "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/PID Autotuner",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/DFRobot_VL6180X",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/I2Cdevlib-MPU6050",
                     "D:/Users/brian/OneDrive/Documents/PlatformIO/Projects/ActiveSuspensionTestRig/.pio/libdeps/esp32dev/I2Cdevlib-Core",
@@ -442,7 +443,6 @@
                     "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                     "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                     "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                    "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                     "C:/Users/brian/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                     ""

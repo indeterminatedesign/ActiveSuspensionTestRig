@@ -22,6 +22,9 @@ volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has g
 #define INTERRUPT_PIN 2
 #define TCAADDR 0x70
 
+#define VCM1_PIN 25
+#define VCM2_PIN 26
+
 uint8_t ret = 1;
 volatile uint8_t flag = 0;
 
@@ -32,7 +35,7 @@ const uint32_t delayForMotor = 4000000; // Gives motor RPM time to settle before
 
 const int freq = 30000;
 const int pwmChannel = 10;
-const int resolution = 8;
+const int resolution = 10;
 uint16_t dutyCycle = 150;
 uint16_t targetRPM = 150;
 
@@ -40,9 +43,9 @@ double_t previousAngle = 0;
 // DFRobot_VL6180X VL6180X;
 
 // Motor PID Settings
-const float_t kP = .023;
-const float_t kI = .000000001;
-const float_t kD = .075;
+const float_t kP = .15;
+const float_t kI = .000000002;
+const float_t kD = .2;
 
 void processMPU();
 float_t processEccentricEncoder();
@@ -88,7 +91,7 @@ void setup()
   //******************************************
   // Servo
   //******************************************
-  //servo.setPeriodHertz(330);
+  // servo.setPeriodHertz(330);
   servo.attach(SERVO_PIN);
   servo.writeMicroseconds(1450);
 
@@ -116,6 +119,12 @@ void setup()
   // attach the channel to the GPIO to be controlled
   ledcAttachPin(MOTOR_PIN, pwmChannel);
 
+  // VCM PWM
+  ledcSetup(11, freq, resolution);
+  ledcSetup(12, freq, resolution);
+  ledcAttachPin(VCM1_PIN, 11);
+  ledcAttachPin(VCM2_PIN, 12);
+
   //******************************************
   // Distance Sensor
   //******************************************
@@ -136,12 +145,12 @@ void setup()
   /*Set threshold value*/
   // VL6180X.setRangeThresholdValue(/*thresholdL 0-255mm */ 40, /*thresholdH 0-255mm*/ 100);
 
-  //#if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_SAM_ZERO)
-  // attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN) , interrupt, FALLING);
-  //#else
-  // attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), interrupt, FALLING); // Enable the external interrupt 0, connect INT1/2 to the digital pin of the main control:
-  // UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
-  //#endif
+  // #if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_SAM_ZERO)
+  //  attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN) , interrupt, FALLING);
+  // #else
+  //  attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), interrupt, FALLING); // Enable the external interrupt 0, connect INT1/2 to the digital pin of the main control:
+  //  UNO(2), Mega2560(2), Leonardo(3), microbit(P0).
+  // #endif
 
   /*Start continuous range measuring mode */
   // VL6180X.rangeStartContinuousMode();
@@ -162,6 +171,7 @@ void setup()
 void loop()
 {
   uint32_t timeElapsed = micros() - previousSampleTime;
+  float_t currentAngle = 0;
 
   if (delayForMotorTriggerTime > 0 && micros() - delayForMotorTriggerTime > delayForMotor)
   {
@@ -170,7 +180,7 @@ void loop()
 
   if (timeElapsed > sampleInterval)
   {
-    float_t currentAngle = processEccentricEncoder();
+    currentAngle = processEccentricEncoder();
     uint16_t rpm = calculateRPM(timeElapsed, currentAngle);
     controlMotorSpeed(targetRPM, rpm, timeElapsed);
 
@@ -186,7 +196,6 @@ void loop()
       Serial.print(",");
       // processDistanceSensor();
       // processMPU();
-       followRoller(currentAngle);
 
       Serial.print(timeElapsed);
       Serial.print(",");
@@ -194,6 +203,13 @@ void loop()
       Serial.println();
     }
     previousSampleTime = micros();
+  }
+
+//Moved outside sampling loop so we can change the freq of the voice coil faster 
+  if (runBegan)
+  {
+    currentAngle = processEccentricEncoder();
+    followRoller(currentAngle);
   }
 }
 
@@ -271,13 +287,13 @@ void controlMotorSpeed(uint16_t targetRPM, uint16_t currentRPM, uint32_t dt)
 
   cumulativeError += error * dt;
   float_t kIComponent = kI * cumulativeError;
-  kIComponent = constrain(kIComponent, -50, 50);
+  kIComponent = constrain(kIComponent, -200, 200);
 
   float_t correction = kP * error + kIComponent + kD * rateError;
 
   output += correction;
   // Make sure the ESC doesn't recieve a signal it can't use and cap the upper limit
-  output = constrain(output, 0, 255);
+  output = constrain(output, 0, 1024);
 #ifdef DEBUG
   Serial.print("Mapped Output: ");
   Serial.println(outputESC);
@@ -338,21 +354,42 @@ float_t calculateRollerDistance(uint16_t angle)
 
 void moveSuspensionDistance(float_t distance)
 {
-  const float_t armRatio = 1.83;  //Ratio between control arm total length and the of the pivot arm and where it is actuated
+  const float_t armRatio = 1.83; // Ratio between control arm total length and the of the pivot arm and where it is actuated
   float_t servoToControlArmDistance = distance / armRatio;
-  const float_t servoArmPivotLenght = 20;  //Distance from center to pivot point on servo arm itself
+  const float_t servoArmPivotLenght = 20; // Distance from center to pivot point on servo arm itself
 
-  float_t servoAngle = atan(servoToControlArmDistance / servoArmPivotLenght);  // In radians
-  int16_t microseconds = 318.33 * servoAngle + 1450; // Converte angle in radians to microseconds for servo
+  float_t servoAngle = atan(servoToControlArmDistance / servoArmPivotLenght); // In radians
+  int16_t microseconds = 318.33 * servoAngle + 1450;                          // Converte angle in radians to microseconds for servo
   servo.writeMicroseconds(microseconds);
   Serial.print(microseconds);
   Serial.print(",");
 }
 
+const int16_t maxVoicecoilPWM = 1024; // half power of 1024
+void setVoiceCoilForce(float_t distance)
+{
+  distance = distance * 10; // For integer math with the MAP function
+  // Map Distance from max to min values for PWM
+  int16_t outputPWM = map(abs(distance), 0, 50, 0, maxVoicecoilPWM);
+
+  // Order confirmed !!!!  :-)
+  if (distance > 0)
+  {
+    ledcWrite(11, 0);
+    ledcWrite(12, outputPWM);
+  }
+  else
+  {
+    ledcWrite(11, outputPWM);
+    ledcWrite(12, 0);
+  }
+}
+
 void followRoller(float_t currentAngle)
 {
   float_t distance = calculateRollerDistance(currentAngle);
-  moveSuspensionDistance(distance);
+  setVoiceCoilForce(distance);
+  // moveSuspensionDistance(distance);
 }
 
 const byte numChars = 32;
